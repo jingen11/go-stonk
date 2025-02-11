@@ -12,7 +12,7 @@ import (
 )
 
 func TestInsertStockPrices(t *testing.T) {
-	url := os.Getenv("MONGODB_URL")
+	url := os.Getenv("MONGODB_URL_TEST")
 	dbClient, _ := Init(url)
 	defer Disconnect(dbClient)
 
@@ -175,7 +175,7 @@ func TestInsertStockPrices(t *testing.T) {
 }
 
 func TestGetAllSymbols(t *testing.T) {
-	url := os.Getenv("MONGODB_URL")
+	url := os.Getenv("MONGODB_URL_TEST")
 	dbClient, _ := Init(url)
 	defer Disconnect(dbClient)
 
@@ -213,7 +213,7 @@ func TestGetAllSymbols(t *testing.T) {
 }
 
 func TestGetStockPrices(t *testing.T) {
-	url := os.Getenv("MONGODB_URL")
+	url := os.Getenv("MONGODB_URL_TEST")
 	dbClient, _ := Init(url)
 	defer Disconnect(dbClient)
 

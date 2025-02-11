@@ -1,6 +1,7 @@
 package stonkapi
 
 import (
+	"os"
 	"testing"
 )
 
@@ -65,5 +66,16 @@ func TestRoundRobinGetApiKey(t *testing.T) {
 			t.Fatalf("Test case %d: expected key: %s, actual key: %s", i, c.ExpectedKey, apiKey)
 		}
 	}
+}
 
+func TetGetPrices(t *testing.T) {
+	apiKey := os.Getenv("ALPHA_VANTAGE_KEY_1")
+	client := InitStonkApiClient([]string{apiKey})
+	stonkData, err := client.GetPrices("AAPL")
+	if err != nil {
+		t.Fatalf("error getting price from api, error: %v", err)
+	}
+	if stonkData.MetaData.Symbol != "AAPL" {
+		t.Fatalf("mismatch stonk symbol")
+	}
 }
