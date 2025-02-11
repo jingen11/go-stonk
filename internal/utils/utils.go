@@ -6,6 +6,7 @@ import (
 )
 
 type ProjectConfig struct {
-	ApiClient *stonkapi.StonkApiClient
-	Query     *db.Query
+	ApiClient           *stonkapi.StonkApiClient
+	Query               *db.Query
+	HistoricalTimeFrame int
 }

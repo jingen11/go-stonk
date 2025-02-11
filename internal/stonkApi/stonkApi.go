@@ -2,6 +2,7 @@ package stonkapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,12 +11,17 @@ import (
 	"github.com/jingen11/stonk-tracker/internal/models"
 )
 
-const ALPHA_VANTAGE_HOST_NAME = "www.alphavantage.co/query"
+const POLYGON_IO_HOST_NAME = "api.polygon.io"
 
 type StonkApiClient struct {
 	Client          http.Client
 	roundRobinIndex int
 	apiKeys         []string
+}
+
+type ErrorResponse struct {
+	Message string `json:"message"`
+	Url     string
 }
 
 func InitStonkApiClient(apiKeys []string) *StonkApiClient {
@@ -44,11 +50,12 @@ func (client *StonkApiClient) roundRobinGetApiKey() string {
 	return apiKey
 }
 
-func (client *StonkApiClient) GetPrices(symbol string) (models.StockData, error) {
+func (client *StonkApiClient) GetPrices(symbol, date string) (models.StockData, error) {
 	endpoint := url.URL{
 		Scheme:   "https",
-		Host:     ALPHA_VANTAGE_HOST_NAME,
-		RawQuery: fmt.Sprintf("function=%s&symbol=%s&apikey=%s", "TIME_SERIES_DAILY_ADJUSTED", symbol, client.roundRobinGetApiKey()),
+		Host:     POLYGON_IO_HOST_NAME,
+		Path:     "v1/open-close/" + symbol + "/" + date,
+		RawQuery: fmt.Sprintf("adjusted=true&apiKey=%s", client.roundRobinGetApiKey()),
 	}
 	res, err := client.Client.Get(endpoint.String())
 
@@ -56,6 +63,22 @@ func (client *StonkApiClient) GetPrices(symbol string) (models.StockData, error)
 
 	if err != nil {
 		return stockData, err
+	}
+
+	if res.StatusCode == 429 {
+		fmt.Println("Cooling down stonk api")
+		time.Sleep(1 * time.Minute)
+		res, err = client.Client.Get(endpoint.String())
+		if err != nil {
+			return stockData, err
+		}
+	}
+
+	if res.StatusCode > 299 {
+		e := ErrorResponse{}
+		json.NewDecoder(res.Body).Decode(&e)
+		e.Url = endpoint.String()
+		return stockData, errors.New(fmt.Sprintf("url: %s,\n message: %s", e.Url, e.Message))
 	}
 
 	err = json.NewDecoder(res.Body).Decode(&stockData)

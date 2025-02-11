@@ -2,9 +2,6 @@ package calculation
 
 import (
 	"math"
-	"strconv"
-
-	"github.com/jingen11/stonk-tracker/internal/models"
 )
 
 type PriceCal struct {
@@ -12,31 +9,6 @@ type PriceCal struct {
 	Close float64
 	High  float64
 	Low   float64
-}
-
-func ConvertPrice(price *models.Price) (PriceCal, error) {
-	priceCal := PriceCal{}
-	open, err := strconv.ParseFloat(price.Open, 64)
-	if err != nil {
-		return priceCal, err
-	}
-	close, err := strconv.ParseFloat(price.Close, 64)
-	if err != nil {
-		return priceCal, err
-	}
-	high, err := strconv.ParseFloat(price.High, 64)
-	if err != nil {
-		return priceCal, err
-	}
-	low, err := strconv.ParseFloat(price.Low, 64)
-	if err != nil {
-		return priceCal, err
-	}
-	priceCal.Open = open
-	priceCal.Close = close
-	priceCal.High = high
-	priceCal.Low = low
-	return priceCal, nil
 }
 
 func GetHeikinDailyClose(price *PriceCal) float64 {

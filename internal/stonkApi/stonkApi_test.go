@@ -68,14 +68,27 @@ func TestRoundRobinGetApiKey(t *testing.T) {
 	}
 }
 
-func TetGetPrices(t *testing.T) {
-	apiKey := os.Getenv("ALPHA_VANTAGE_KEY_1")
+func TestGetPrices(t *testing.T) {
+	apiKey := os.Getenv("POLYGON_IO_KEY_1")
 	client := InitStonkApiClient([]string{apiKey})
-	stonkData, err := client.GetPrices("AAPL")
+	stonkData, err := client.GetPrices("AAPL", "2025-02-10")
 	if err != nil {
 		t.Fatalf("error getting price from api, error: %v", err)
 	}
-	if stonkData.MetaData.Symbol != "AAPL" {
+	if stonkData.Symbol != "AAPL" {
 		t.Fatalf("mismatch stonk symbol")
 	}
+}
+
+func TestGetPricesRateLimit(t *testing.T) {
+	apiKey := os.Getenv("POLYGON_IO_KEY_2")
+	client := InitStonkApiClient([]string{apiKey})
+	for i := 0; i < 6; i++ {
+		_, err := client.GetPrices("AAPL", "2025-02-10")
+
+		if err != nil {
+			t.Fatalf("error getting price from api rate limit, error: %v", err)
+		}
+	}
+
 }

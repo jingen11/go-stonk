@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,24 +23,26 @@ type GetStockPriceOpt struct {
 	limit  int64
 }
 
-func (q *Query) InsertStockPrices(stock models.StockData, ctx context.Context) (int, error) {
-	symbol := stock.MetaData.Symbol
+func (q *Query) InsertStockPrice(stock models.StockData, ctx context.Context) (*models.Price, error) {
+	p := models.Price{}
+	symbol := stock.Symbol
 
 	symbolDoc := q.SymbolColl.FindOne(ctx, bson.M{"symbol": symbol})
 
 	if symbolDoc.Err() != nil && symbolDoc.Err() != mongo.ErrNoDocuments {
 		fmt.Println("Failed to find symbol")
-		return 0, symbolDoc.Err()
+		return &p, symbolDoc.Err()
 	}
 
 	symbolStruct := models.Symbol{}
 
 	if symbolDoc.Err() == mongo.ErrNoDocuments {
-		lastFetchedDate, err := time.Parse("2006-01-02", "1970-01-01")
+		lastFetchedDate, err := time.Parse("2006-01-02", stock.From)
 		if err != nil {
-			fmt.Println("Failed to parse lastFetchedDate")
-			return 0, err
+			fmt.Println("Failed to parse stonkDate")
+			return &p, err
 		}
+
 		newSymbol := models.Symbol{
 			Symbol:          symbol,
 			LastFetchedDate: primitive.NewDateTimeFromTime(lastFetchedDate),
@@ -48,7 +51,7 @@ func (q *Query) InsertStockPrices(stock models.StockData, ctx context.Context) (
 
 		if err != nil {
 			fmt.Println("Failed to insert symbol")
-			return 0, err
+			return &p, err
 		}
 
 		newSymbol.Id = insertedSymbol.InsertedID.(primitive.ObjectID)
@@ -58,63 +61,50 @@ func (q *Query) InsertStockPrices(stock models.StockData, ctx context.Context) (
 
 		if err != nil {
 			fmt.Println("Failed to decode symbol")
-			return 0, err
+			return &p, err
 		}
 	}
-
-	docs := make([]interface{}, 0)
 
 	lastFetchedDate := symbolStruct.LastFetchedDate.Time()
 
-	latestDate := lastFetchedDate
-
-	for k, v := range stock.TimeSeriesDaily {
-		stonkDate, err := time.Parse("2006-01-02", k)
-		if err != nil {
-			fmt.Println("Failed to parse stonkDate")
-			return 0, err
-		}
-		if stonkDate.After(latestDate) {
-			latestDate = stonkDate
-		}
-		if lastFetchedDate.Before(stonkDate) {
-			docs = append(docs, models.Price{
-				Symbol: symbol,
-				Date:   primitive.NewDateTimeFromTime(stonkDate),
-				Open:   v.Open,
-				Close:  v.Close,
-				High:   v.High,
-				Low:    v.Low,
-				Volume: v.Volume,
-			})
-		} else {
-			break
-		}
-	}
-
-	if len(docs) == 0 {
-		return 0, nil
-	}
-
-	res, err := q.PriceColl.InsertMany(ctx, docs)
+	stonkDate, err := time.Parse("2006-01-02", stock.From)
 
 	if err != nil {
-		fmt.Println("failed to insert prices")
-		return 0, err
+		fmt.Println("Failed to parse stonkDate")
+		return &p, err
 	}
 
-	if latestDate.After(lastFetchedDate) {
+	p = models.Price{
+		Symbol: symbol,
+		Date:   primitive.NewDateTimeFromTime(stonkDate),
+		Open:   stock.Open,
+		Close:  stock.Close,
+		High:   stock.High,
+		Low:    stock.Low,
+		Volume: stock.Volume,
+	}
+
+	inserted, err := q.PriceColl.InsertOne(ctx, p)
+
+	if err != nil {
+		fmt.Println("Failed to parse stonkDate")
+		return &p, err
+	}
+
+	p.Id = inserted.InsertedID.(primitive.ObjectID)
+
+	if stonkDate.After(lastFetchedDate) {
 		_, err := q.SymbolColl.UpdateByID(ctx, symbolStruct.Id, bson.D{
-			{"$set", bson.D{{"lastFetchedDate", primitive.NewDateTimeFromTime(latestDate)}}},
+			{"$set", bson.D{{"lastFetchedDate", primitive.NewDateTimeFromTime(stonkDate)}}},
 		})
 
 		if err != nil {
 			fmt.Println("failed to update symbol lastFetch")
-			return 0, err
+			return &p, err
 		}
 	}
 
-	return len(res.InsertedIDs), nil
+	return &p, nil
 }
 
 func (q *Query) GetAllSymbols(ctx context.Context) ([]models.Symbol, error) {
@@ -167,4 +157,93 @@ func (q *Query) GetStockPrices(ctx context.Context, opt *GetStockPriceOpt) ([]mo
 	}
 
 	return prices, nil
+}
+
+func (q *Query) InsertStockPrices(stocks []models.StockData, symbol string, ctx context.Context) (int, error) {
+	if len(stocks) == 0 {
+		return 0, errors.New("no stocks found")
+	}
+	symbolDoc := q.SymbolColl.FindOne(ctx, bson.M{"symbol": symbol})
+
+	if symbolDoc.Err() != nil && symbolDoc.Err() != mongo.ErrNoDocuments {
+		fmt.Println("Failed to find symbol")
+		return 0, symbolDoc.Err()
+	}
+
+	symbolStruct := models.Symbol{}
+
+	if symbolDoc.Err() == mongo.ErrNoDocuments {
+		lastFetchedDate, err := time.Parse("2006-01-02", "1970-01-01")
+		if err != nil {
+			fmt.Println("Failed to parse lastFetchedDate")
+			return 0, err
+		}
+		newSymbol := models.Symbol{
+			Symbol:          symbol,
+			LastFetchedDate: primitive.NewDateTimeFromTime(lastFetchedDate),
+		}
+		insertedSymbol, err := q.SymbolColl.InsertOne(ctx, newSymbol)
+
+		if err != nil {
+			fmt.Println("Failed to insert symbol")
+			return 0, err
+		}
+
+		newSymbol.Id = insertedSymbol.InsertedID.(primitive.ObjectID)
+		symbolStruct = newSymbol
+	} else {
+		err := symbolDoc.Decode(&symbolStruct)
+
+		if err != nil {
+			fmt.Println("Failed to decode symbol")
+			return 0, err
+		}
+	}
+
+	docs := make([]interface{}, 0)
+
+	lastFetchedDate := symbolStruct.LastFetchedDate.Time() // 1970-01-01 || lags behind date remains constant
+
+	latestDate := lastFetchedDate // to be updated for each iteration
+
+	for _, stonk := range stocks {
+		stonkDate, err := time.Parse("2006-01-02", stonk.From)
+		if err != nil {
+			fmt.Println("Failed to parse stonkDate")
+			return 0, err
+		}
+		if stonkDate.After(latestDate) {
+			latestDate = stonkDate
+		}
+
+		docs = append(docs, models.Price{
+			Symbol: symbol,
+			Date:   primitive.NewDateTimeFromTime(stonkDate),
+			Open:   stonk.Open,
+			Close:  stonk.Close,
+			High:   stonk.High,
+			Low:    stonk.Low,
+			Volume: stonk.Volume,
+		})
+	}
+
+	res, err := q.PriceColl.InsertMany(ctx, docs)
+
+	if err != nil {
+		fmt.Println("failed to insert prices")
+		return 0, err
+	}
+
+	if latestDate.After(lastFetchedDate) {
+		_, err := q.SymbolColl.UpdateByID(ctx, symbolStruct.Id, bson.D{
+			{"$set", bson.D{{"lastFetchedDate", primitive.NewDateTimeFromTime(latestDate)}}},
+		})
+
+		if err != nil {
+			fmt.Println("failed to update symbol lastFetch")
+			return 0, err
+		}
+	}
+
+	return len(res.InsertedIDs), nil
 }

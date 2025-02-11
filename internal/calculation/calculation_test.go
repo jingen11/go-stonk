@@ -2,40 +2,7 @@ package calculation
 
 import (
 	"testing"
-
-	"github.com/jingen11/stonk-tracker/internal/models"
 )
-
-func TestConvertPrice(t *testing.T) {
-	cases := []struct {
-		input    models.Price
-		expected PriceCal
-	}{
-		{input: models.Price{
-			Open:  "255.2800",
-			High:  "256.9300",
-			Low:   "252.0200",
-			Close: "252.3400",
-		}, expected: PriceCal{
-			Open:  255.2800,
-			High:  256.9300,
-			Low:   252.0200,
-			Close: 252.3400,
-		}},
-	}
-
-	for _, c := range cases {
-		price, err := ConvertPrice(&c.input)
-
-		if err != nil {
-			t.Fatalf("cannot convert price: %v", err)
-		}
-
-		if price.Open != c.expected.Open && price.High != c.expected.High && price.Close != c.expected.Close && price.Low != c.expected.Low {
-			t.Fatalf("failed to convert price")
-		}
-	}
-}
 
 func TestGetHeikinDailyClose(t *testing.T) {
 	cases := []struct {
