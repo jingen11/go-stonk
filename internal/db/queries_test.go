@@ -92,7 +92,7 @@ func TestInsertStockPrice(t *testing.T) {
 	}
 }
 
-func TestInsertStockPrices(t *testing.T) {
+func TestInsertSymbolStockPrices(t *testing.T) {
 	url := os.Getenv("MONGODB_URL_TEST")
 	dbClient, _ := Init(url)
 	defer Disconnect(dbClient)
@@ -274,7 +274,7 @@ func TestInsertStockPrices(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		_, err := q.InsertStockPrices(c.input, c.symbol, context.Background())
+		_, err := q.InsertSymbolStockPrices(c.input, c.symbol, context.Background())
 		if err != nil {
 			t.Fatalf("error: %v", err)
 		}

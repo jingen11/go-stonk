@@ -159,7 +159,7 @@ func (q *Query) GetStockPrices(ctx context.Context, opt *GetStockPriceOpt) ([]mo
 	return prices, nil
 }
 
-func (q *Query) InsertStockPrices(stocks []models.StockData, symbol string, ctx context.Context) (int, error) {
+func (q *Query) InsertSymbolStockPrices(stocks []models.StockData, symbol string, ctx context.Context) (int, error) {
 	if len(stocks) == 0 {
 		return 0, errors.New("no stocks found")
 	}
