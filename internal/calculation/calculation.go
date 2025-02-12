@@ -1,5 +1,6 @@
 package calculation
 
+// https://www.litefinance.org/blog/for-beginners/types-of-forex-charts/heikin-ashi-candles/
 import (
 	"math"
 )
@@ -11,27 +12,31 @@ type PriceCal struct {
 	Low   float64
 }
 
+func GetHeikinDailyOpen(prev *PriceCal) float64 {
+	return (prev.Open + prev.Close) / 2
+}
+
 func GetHeikinDailyClose(price *PriceCal) float64 {
 	return (price.Open + price.Close + price.High + price.Low) / 4
 }
 
-func GetHeikinDailyHigh(price *PriceCal) float64 {
-	return math.Max(math.Max(price.Open, price.Close), price.High)
+func GetHeikinDailyHigh(price *PriceCal, prev *PriceCal) float64 {
+	open := GetHeikinDailyOpen(prev)
+	close := GetHeikinDailyClose(price)
+	return math.Max(math.Max(open, close), price.High)
 }
 
-func GetHeikinDailyLow(price *PriceCal) float64 {
-	return math.Min(math.Max(price.Open, price.Close), price.Low)
-}
-
-func GetHeikinDailyOpen(prev *PriceCal) float64 {
-	return (prev.Open + prev.Close) / 2
+func GetHeikinDailyLow(price *PriceCal, prev *PriceCal) float64 {
+	open := GetHeikinDailyOpen(prev)
+	close := GetHeikinDailyClose(price)
+	return math.Min(math.Min(open, close), price.Low)
 }
 
 // prev should be heikin, price should be normal
 func GetIsSpinningTop(price *PriceCal, prev *PriceCal) bool {
 	open := GetHeikinDailyOpen(prev)
-	high := GetHeikinDailyHigh(price)
-	low := GetHeikinDailyLow(price)
+	high := GetHeikinDailyHigh(price, prev)
+	low := GetHeikinDailyLow(price, prev)
 	close := GetHeikinDailyClose(price)
 
 	dailyRange := high - low
@@ -59,8 +64,8 @@ func GetIsSpinningTop(price *PriceCal, prev *PriceCal) bool {
 
 func GetIsDojiStar(price *PriceCal, prev *PriceCal) bool {
 	open := GetHeikinDailyOpen(prev)
-	high := GetHeikinDailyHigh(price)
-	low := GetHeikinDailyLow(price)
+	high := GetHeikinDailyHigh(price, prev)
+	low := GetHeikinDailyLow(price, prev)
 	close := GetHeikinDailyClose(price)
 
 	dailyRange := high - low
@@ -79,8 +84,8 @@ func GetIsDojiStar(price *PriceCal, prev *PriceCal) bool {
 }
 
 func GetIsGravestoneDoji(price *PriceCal, prev *PriceCal) bool {
-	high := GetHeikinDailyHigh(price)
-	low := GetHeikinDailyLow(price)
+	high := GetHeikinDailyHigh(price, prev)
+	low := GetHeikinDailyLow(price, prev)
 	close := GetHeikinDailyClose(price)
 	open := GetHeikinDailyOpen(prev)
 
@@ -117,4 +122,20 @@ func GetIsUptrend(price *PriceCal, prev *PriceCal) bool {
 	}
 
 	return uptrend
+}
+
+func GetIsBull(price *PriceCal, prev *PriceCal) bool {
+	open := GetHeikinDailyOpen(prev)
+	low := GetHeikinDailyLow(price, prev)
+	close := GetHeikinDailyClose(price)
+
+	return open < close && int(open*100) == int(low*100)
+}
+
+func GetIsBear(price *PriceCal, prev *PriceCal) bool {
+	open := GetHeikinDailyOpen(prev)
+	high := GetHeikinDailyHigh(price, prev)
+	close := GetHeikinDailyClose(price)
+
+	return close < open && int(open*100) == int(high*100)
 }

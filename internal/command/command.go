@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
+	"github.com/jingen11/stonk-tracker/internal/calculation"
+	"github.com/jingen11/stonk-tracker/internal/db"
 	"github.com/jingen11/stonk-tracker/internal/models"
 	"github.com/jingen11/stonk-tracker/internal/utils"
 )
@@ -134,21 +137,97 @@ func HandlerAddNewSymbol(p *Command) error {
 	return nil
 }
 
-// func HandleGetTrendReversal(p *Command) error {
-// 	if len(p.input) != 1 {
-// 		return errors.New("Please provide a stonk symbol")
-// 	}
-// 	symbol := p.input[0]
-// 	prices, err := p.cfg.Query.GetStockPrices(context.Background(), &db.GetStockPriceOpt{
-// 		Symbol: symbol,
-// 	})
-// 	if err != nil {
-// 		return err
-// 	}
-// 	for _, price := range prices {
+func HandleGetInfo(p *Command) error {
+	symbols, err := p.Cfg.Query.GetAllSymbols(context.TODO())
+	if err != nil {
+		return err
+	}
+	limit := 80
+	endChan := make(chan bool)
+	for _, s := range symbols {
+		go getSymbolInfo(p, s, limit, endChan)
+	}
 
-// 	}
-// }
+	for range symbols {
+		<-endChan
+	}
+	return nil
+}
+
+func getSymbolInfo(p *Command, s models.Symbol, limit int, endChan chan bool) {
+	prices, err := p.Cfg.Query.GetStockPrices(context.TODO(), &db.GetStockPriceOpt{
+		Symbol: s.Symbol,
+		Limit:  int64(limit),
+	})
+
+	if err != nil {
+		fmt.Printf("Cannot get info for symbol: %s\n", s.Symbol)
+		endChan <- false
+		return
+	}
+
+	if len(prices) != limit {
+		fmt.Printf("Insufficient data point for symbol: %s\n", s.Symbol)
+		endChan <- false
+		return
+	}
+
+	slices.Reverse(prices)
+
+	pr := models.Price{}
+
+	for i, p := range prices {
+		if i == 0 {
+			pr = p
+		}
+		price := calculation.PriceCal{
+			Open:  p.Open,
+			Close: p.Close,
+			High:  p.High,
+			Low:   p.Low,
+		}
+
+		prev := calculation.PriceCal{
+			Open:  pr.Open,  // HA
+			Close: pr.Close, // HA
+		}
+		po := calculation.GetHeikinDailyOpen(&prev)
+		pc := calculation.GetHeikinDailyClose(&price)
+
+		pr = models.Price{
+			Open:  po,
+			Close: pc,
+		}
+	}
+
+	price := calculation.PriceCal{
+		Open:  prices[limit-1].Open,
+		Close: prices[limit-1].Close,
+		High:  prices[limit-1].High,
+		Low:   prices[limit-1].Low,
+	}
+
+	prev := calculation.PriceCal{
+		Open:  pr.Open,  // HA
+		Close: pr.Close, // HA
+	}
+
+	o := calculation.GetHeikinDailyOpen(&prev)
+	c := calculation.GetHeikinDailyClose(&price)
+	h := calculation.GetHeikinDailyHigh(&price, &prev)
+	l := calculation.GetHeikinDailyLow(&price, &prev)
+	u := calculation.GetIsUptrend(&price, &prev)
+	bu := calculation.GetIsBull(&price, &prev)
+	be := calculation.GetIsBear(&price, &prev)
+	st := calculation.GetIsSpinningTop(&price, &prev)
+	ds := calculation.GetIsDojiStar(&price, &prev)
+	g := calculation.GetIsGravestoneDoji(&price, &prev)
+	sen := getSentiment(u, bu, be, st, ds, g)
+
+	fmt.Printf("------------------------------------\nDate: %s\nSymbol: %s\nOHLC: %.2f, %.2f, %.2f, %.2f\nUptrend: %v\nBull: %v\nBear: %v\nSpinningTop: %v\nDoji: %v\nGrave: %v \nSentiment: %s\n",
+		prices[limit-1].Date.Time().Format("2006-01-02"), s.Symbol, o, h, l, c, u, bu, be, st, ds, g, sen)
+	endChan <- true
+}
 
 func getPriceConcurrently(errChan chan error, stockChan chan models.StockData, symbol string, date time.Time, p *Command) {
 	stockData, err := p.Cfg.ApiClient.GetPrices(symbol, date.Format("2006-01-02"))
@@ -184,4 +263,35 @@ func getPriceChanSubscriber(errChan chan error, stockChan chan models.StockData,
 
 func truncateToDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
+func getSentiment(u, bu, be, st, ds, g bool) string {
+	if !u && ds {
+		return "buy"
+	}
+	if u && ds {
+		return "sell"
+	}
+	if u && st {
+		return "hold, sell"
+	}
+	if be {
+		return "SELL"
+	}
+	if bu {
+		return "hold, add"
+	}
+	if g {
+		return "sell"
+	}
+	if u && st {
+		return "hold"
+	}
+	if !u {
+		return "sell"
+	}
+	if u {
+		return "hold"
+	}
+	return "no action"
 }

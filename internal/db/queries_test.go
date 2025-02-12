@@ -384,15 +384,15 @@ func TestGetStockPrices(t *testing.T) {
 	}{
 		{input: GetStockPriceOpt{
 			Symbol: "IBM",
-			limit:  2,
+			Limit:  2,
 		}, expectedLength: 2},
 		{input: GetStockPriceOpt{
 			Symbol: "IBM",
-			limit:  5,
+			Limit:  5,
 		}, expectedLength: 3},
 		{input: GetStockPriceOpt{
 			Symbol: "GOOGL",
-			limit:  10,
+			Limit:  10,
 		}, expectedLength: 1},
 	}
 

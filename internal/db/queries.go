@@ -20,7 +20,7 @@ type Query struct {
 
 type GetStockPriceOpt struct {
 	Symbol string
-	limit  int64
+	Limit  int64
 }
 
 func (q *Query) InsertStockPrice(stock models.StockData, ctx context.Context) (*models.Price, error) {
@@ -128,11 +128,11 @@ func (q *Query) GetAllSymbols(ctx context.Context) ([]models.Symbol, error) {
 }
 
 func (q *Query) GetStockPrices(ctx context.Context, opt *GetStockPriceOpt) ([]models.Price, error) {
-	if opt.limit == 0 {
-		opt.limit = 100
+	if opt.Limit == 0 {
+		opt.Limit = 100
 	}
 	opts := options.Find()
-	opts.SetLimit(opt.limit)
+	opts.SetLimit(opt.Limit)
 	opts.SetSort(bson.M{
 		"date": -1,
 	})

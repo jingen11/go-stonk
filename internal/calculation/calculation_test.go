@@ -30,19 +30,25 @@ func TestGetHeikinDailyClose(t *testing.T) {
 func TestGetHeikinDailyLow(t *testing.T) {
 	cases := []struct {
 		input    PriceCal
+		prev     PriceCal
 		expected int
 	}{{
+		// ARM 2024-08-06
 		input: PriceCal{
-			Open:  162.96,
-			Close: 160.84,
-			High:  163.4,
-			Low:   158.58,
+			Open:  115.53,
+			High:  117.97,
+			Low:   109.50,
+			Close: 113.39,
 		},
-		expected: 15858,
+		prev: PriceCal{
+			Open:  123.73,
+			Close: 104.78,
+		},
+		expected: 10950,
 	}}
 
 	for _, c := range cases {
-		price := GetHeikinDailyLow(&c.input)
+		price := GetHeikinDailyLow(&c.input, &c.prev)
 
 		if int(price*100) != c.expected {
 			t.Fatalf("Expected price: %f, actual price: %f", float64(c.expected)/100, price)
@@ -53,19 +59,25 @@ func TestGetHeikinDailyLow(t *testing.T) {
 func TestGetHeikinDailyHigh(t *testing.T) {
 	cases := []struct {
 		input    PriceCal
+		prev     PriceCal
 		expected int
 	}{{
+		// ARM 2024-08-06
 		input: PriceCal{
-			Open:  162.96,
-			Close: 160.84,
-			High:  163.4,
-			Low:   158.58,
+			Open:  115.53,
+			High:  117.97,
+			Low:   109.50,
+			Close: 113.39,
 		},
-		expected: 16340,
+		prev: PriceCal{
+			Open:  123.73,
+			Close: 104.78,
+		},
+		expected: 11797,
 	}}
 
 	for _, c := range cases {
-		price := GetHeikinDailyHigh(&c.input)
+		price := GetHeikinDailyHigh(&c.input, &c.prev)
 
 		if int(price*100) != c.expected {
 			t.Fatalf("Expected price: %f, actual price: %f", float64(c.expected)/100, price)
@@ -394,6 +406,226 @@ func TestGetIsUptrend(t *testing.T) {
 
 		if isUptrend != c.expected {
 			t.Fatalf("Test Case %d of TestGetIsUptrend failed, expected: %t, actual: %t", i, c.expected, isUptrend)
+		}
+	}
+}
+
+func TestGetIsBull(t *testing.T) {
+	cases := []struct {
+		input    PriceCal
+		prev     PriceCal
+		expected bool
+	}{
+		{ // SMCI 2025-02-11
+			input: PriceCal{
+				Open:  40.59,
+				High:  42.39,
+				Low:   38.42,
+				Close: 38.61,
+			},
+			prev: PriceCal{
+				Open:  33.46,
+				Close: 40.22,
+			},
+			expected: true,
+		},
+		{ // SMCI 2024-02-03
+			input: PriceCal{
+				Open:  28.93,
+				High:  28.93,
+				Low:   25.71,
+				Close: 26.84,
+			},
+			prev: PriceCal{
+				Open:  28.78,
+				Close: 29.08,
+			},
+			expected: false,
+		},
+		{ // ARM 2024-10-15
+			input: PriceCal{
+				Open:  160.00,
+				High:  160.62,
+				Low:   147.00,
+				Close: 150.67,
+			},
+			prev: PriceCal{
+				Open:  148.11,
+				Close: 158.05,
+			},
+			expected: false,
+		},
+		{ // ARM 2024-10-14
+			input: PriceCal{
+				Open:  153.10,
+				High:  164.16,
+				Low:   153.10,
+				Close: 161.82,
+			},
+			prev: PriceCal{
+				Open:  145.94,
+				Close: 150.29,
+			},
+			expected: true, // bull
+		},
+
+		{ // ARM 2024-10-18
+			input: PriceCal{
+				Open:  155.57,
+				High:  155.74,
+				Low:   151.96,
+				Close: 153.03,
+			},
+			prev: PriceCal{
+				Open:  153.54,
+				Close: 156.30,
+			},
+			expected: false,
+		},
+
+		{ // ARM 2024-10-22
+			input: PriceCal{
+				Open:  150.46,
+				High:  152.94,
+				Low:   149.83,
+				Close: 152.58,
+			},
+			prev: PriceCal{
+				Open:  154.50,
+				Close: 152.01,
+			},
+			expected: false, // bear
+		},
+		{ // ARM 2024-10-25
+			input: PriceCal{
+				Open:  142.00,
+				High:  145.56,
+				Low:   141.50,
+				Close: 143.75,
+			},
+			prev: PriceCal{
+				Open:  148.60,
+				Close: 141.58,
+			},
+			expected: false,
+		},
+	}
+
+	for i, c := range cases {
+		isBull := GetIsBull(&c.input, &c.prev)
+
+		if isBull != c.expected {
+			t.Fatalf("Test Case %d of TestGetIsBull failed, expected: %t, actual: %t", i, c.expected, isBull)
+		}
+	}
+}
+
+func TestGetIsBear(t *testing.T) {
+	cases := []struct {
+		input    PriceCal
+		prev     PriceCal
+		expected bool
+	}{
+		{ // SMCI 2025-02-11
+			input: PriceCal{
+				Open:  40.59,
+				High:  42.39,
+				Low:   38.42,
+				Close: 38.61,
+			},
+			prev: PriceCal{
+				Open:  33.46,
+				Close: 40.22,
+			},
+			expected: false,
+		},
+		{ // SMCI 2024-02-03
+			input: PriceCal{
+				Open:  28.93,
+				High:  28.93,
+				Low:   25.71,
+				Close: 26.84,
+			},
+			prev: PriceCal{
+				Open:  28.78,
+				Close: 29.08,
+			},
+			expected: true,
+		},
+		{ // ARM 2024-10-15
+			input: PriceCal{
+				Open:  160.00,
+				High:  160.62,
+				Low:   147.00,
+				Close: 150.67,
+			},
+			prev: PriceCal{
+				Open:  148.11,
+				Close: 158.05,
+			},
+			expected: false,
+		},
+		{ // ARM 2024-10-14
+			input: PriceCal{
+				Open:  153.10,
+				High:  164.16,
+				Low:   153.10,
+				Close: 161.82,
+			},
+			prev: PriceCal{
+				Open:  145.94,
+				Close: 150.29,
+			},
+			expected: false, // bull
+		},
+
+		{ // ARM 2024-10-18
+			input: PriceCal{
+				Open:  155.57,
+				High:  155.74,
+				Low:   151.96,
+				Close: 153.03,
+			},
+			prev: PriceCal{
+				Open:  153.54,
+				Close: 156.30,
+			},
+			expected: false,
+		},
+
+		{ // ARM 2024-10-22
+			input: PriceCal{
+				Open:  150.46,
+				High:  152.94,
+				Low:   149.83,
+				Close: 152.58,
+			},
+			prev: PriceCal{
+				Open:  154.50,
+				Close: 152.01,
+			},
+			expected: true, // bear
+		},
+		{ // ARM 2024-10-25
+			input: PriceCal{
+				Open:  142.00,
+				High:  145.56,
+				Low:   141.50,
+				Close: 143.75,
+			},
+			prev: PriceCal{
+				Open:  148.60,
+				Close: 141.58,
+			},
+			expected: false,
+		},
+	}
+
+	for i, c := range cases {
+		isBear := GetIsBear(&c.input, &c.prev)
+
+		if isBear != c.expected {
+			t.Fatalf("Test Case %d of TestGetIsBear failed, expected: %t, actual: %t", i, c.expected, isBear)
 		}
 	}
 }

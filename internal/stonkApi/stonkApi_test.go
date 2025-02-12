@@ -90,5 +90,4 @@ func TestGetPricesRateLimit(t *testing.T) {
 			t.Fatalf("error getting price from api rate limit, error: %v", err)
 		}
 	}
-
 }

@@ -71,6 +71,7 @@ func main() {
 
 	c.register("refresh", command.HandleRefresh)
 	c.register("add", command.HandlerAddNewSymbol)
+	c.register("info", command.HandleGetInfo)
 
 	comm := os.Args[1]
 	args := os.Args[2:]
