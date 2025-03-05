@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"log"
 	"os"
 
@@ -36,6 +37,7 @@ func (c *commands) run(name string, command *command.Command) error {
 
 func main() {
 	cfg := utils.ProjectConfig{}
+	cfg.StdScanner = bufio.NewScanner(os.Stdin)
 	cfg.HistoricalTimeFrame = 100
 	godotenv.Load()
 	dbUrl := os.Getenv("MONGODB_URL")
@@ -72,6 +74,7 @@ func main() {
 	c.register("refresh", command.HandleRefresh)
 	c.register("add", command.HandlerAddNewSymbol)
 	c.register("info", command.HandleGetInfo)
+	c.register("calibrate", command.HandleCalibrate)
 
 	comm := os.Args[1]
 	args := os.Args[2:]

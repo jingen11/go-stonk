@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
+	"github.com/jingen11/stonk-tracker/internal/calculation"
 	"github.com/jingen11/stonk-tracker/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -21,6 +23,12 @@ type Query struct {
 type GetStockPriceOpt struct {
 	Symbol string
 	Limit  int64
+}
+
+type CalibrateStockPriceOpt struct {
+	Symbol  string
+	HAOpen  float64
+	HAClose float64
 }
 
 func (q *Query) InsertStockPrice(stock models.StockData, ctx context.Context) (*models.Price, error) {
@@ -127,6 +135,26 @@ func (q *Query) GetAllSymbols(ctx context.Context) ([]models.Symbol, error) {
 	return symbols, nil
 }
 
+func (q *Query) GetSymbol(ctx context.Context, symbol string) (models.Symbol, error) {
+	symbolDoc := q.SymbolColl.FindOne(ctx, bson.M{"symbol": symbol})
+
+	s := models.Symbol{}
+
+	if symbolDoc.Err() != nil {
+		fmt.Println("failed to get all symbols")
+		return s, symbolDoc.Err()
+	}
+
+	err := symbolDoc.Decode(&s)
+
+	if err != nil {
+		fmt.Println("faile to decode all symbols")
+		return s, err
+	}
+
+	return s, nil
+}
+
 func (q *Query) GetStockPrices(ctx context.Context, opt *GetStockPriceOpt) ([]models.Price, error) {
 	if opt.Limit == 0 {
 		opt.Limit = 100
@@ -172,7 +200,10 @@ func (q *Query) InsertSymbolStockPrices(stocks []models.StockData, symbol string
 
 	symbolStruct := models.Symbol{}
 
+	isNew := false
+
 	if symbolDoc.Err() == mongo.ErrNoDocuments {
+		isNew = true
 		lastFetchedDate, err := time.Parse("2006-01-02", "1970-01-01")
 		if err != nil {
 			fmt.Println("Failed to parse lastFetchedDate")
@@ -206,6 +237,22 @@ func (q *Query) InsertSymbolStockPrices(stocks []models.StockData, symbol string
 
 	latestDate := lastFetchedDate // to be updated for each iteration
 
+	latestPrice := models.Price{}
+	if !isNew {
+		latestPriceRes := q.PriceColl.FindOne(ctx, bson.M{"symbol": symbol, "date": primitive.NewDateTimeFromTime(lastFetchedDate)})
+		if latestPriceRes.Err() != nil {
+			return 0, latestPriceRes.Err()
+		}
+		err := latestPriceRes.Decode(&latestPrice)
+		if err != nil {
+			return 0, latestPriceRes.Err()
+		}
+	}
+
+	sort.Slice(stocks, func(i, j int) bool {
+		return stocks[i].From < stocks[j].From
+	})
+
 	for _, stonk := range stocks {
 		stonkDate, err := time.Parse("2006-01-02", stonk.From)
 		if err != nil {
@@ -216,21 +263,50 @@ func (q *Query) InsertSymbolStockPrices(stocks []models.StockData, symbol string
 			latestDate = stonkDate
 		}
 
-		docs = append(docs, models.Price{
-			Symbol: symbol,
-			Date:   primitive.NewDateTimeFromTime(stonkDate),
-			Open:   stonk.Open,
-			Close:  stonk.Close,
-			High:   stonk.High,
-			Low:    stonk.Low,
-			Volume: stonk.Volume,
-		})
+		if isNew {
+			docs = append(docs, models.Price{
+				Symbol:     symbol,
+				Date:       primitive.NewDateTimeFromTime(stonkDate),
+				Open:       stonk.Open,
+				Close:      stonk.Close,
+				High:       stonk.High,
+				Low:        stonk.Low,
+				Volume:     stonk.Volume,
+				AfterHours: stonk.AfterHours,
+			})
+		} else {
+			open := calculation.GetHeikinDailyOpen(&calculation.PriceCal{
+				Open:  latestPrice.HAOpen,
+				Close: latestPrice.HAClose,
+			})
+
+			close := calculation.GetHeikinDailyClose(&calculation.PriceCal{
+				Open:  stonk.Open,
+				Close: stonk.Close,
+				High:  stonk.High,
+				Low:   stonk.Low,
+			})
+
+			latestPrice = models.Price{
+				Symbol:     symbol,
+				Date:       primitive.NewDateTimeFromTime(stonkDate),
+				Open:       stonk.Open,
+				Close:      stonk.Close,
+				High:       stonk.High,
+				Low:        stonk.Low,
+				Volume:     stonk.Volume,
+				AfterHours: stonk.AfterHours,
+				HAOpen:     open,
+				HAClose:    close,
+			}
+			docs = append(docs, latestPrice)
+		}
 	}
 
 	res, err := q.PriceColl.InsertMany(ctx, docs)
 
 	if err != nil {
-		fmt.Println("failed to insert prices")
+		fmt.Println("failed to insert prices", err)
 		return 0, err
 	}
 
@@ -246,4 +322,49 @@ func (q *Query) InsertSymbolStockPrices(stocks []models.StockData, symbol string
 	}
 
 	return len(res.InsertedIDs), nil
+}
+
+func (q *Query) CalibrateStockPrice(ctx context.Context, opt *CalibrateStockPriceOpt) error {
+	latestSortOpt := options.FindOptions{}
+	latestSortOpt.SetLimit(2)
+	latestSortOpt.SetSort(bson.M{"date": -1})
+	cursor, err := q.PriceColl.Find(ctx, bson.M{"symbol": opt.Symbol}, &latestSortOpt)
+
+	if err != nil {
+		return err
+	}
+
+	prices := []models.Price{}
+
+	err = cursor.All(ctx, &prices)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = q.PriceColl.UpdateByID(ctx, prices[1].Id, bson.D{
+		{"$set", bson.D{
+			{"haOpen", opt.HAOpen},
+			{"haClose", opt.HAClose},
+		}}})
+	if err != nil {
+		return err
+	}
+	open := calculation.GetHeikinDailyOpen(&calculation.PriceCal{
+		Open:  opt.HAOpen,
+		Close: opt.HAClose,
+	})
+	close := calculation.GetHeikinDailyClose(&calculation.PriceCal{
+		Open:  prices[0].Open,
+		Close: prices[0].Close,
+		High:  prices[0].High,
+		Low:   prices[0].Low,
+	})
+	_, err = q.PriceColl.UpdateByID(ctx, prices[0].Id, bson.D{
+		{"$set", bson.D{
+			{"haOpen", open},
+			{"haClose", close},
+		}}})
+
+	return nil
 }

@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jingen11/stonk-tracker/internal/calculation"
@@ -61,6 +62,11 @@ func HandleRefresh(p *Command) error {
 		// }
 	}
 
+	if len(packages) == 0 {
+		fmt.Println("All stonk data are the latest")
+		return nil
+	}
+
 	stockChan := make(chan models.StockData)
 	errChan := make(chan error)
 	total := 0
@@ -91,7 +97,10 @@ func HandleRefresh(p *Command) error {
 			}
 		} else {
 			latest := append(entry.stockData, stock)
-			entry.stockData = latest
+			mapper[stock.Symbol] = stonkStonksResponse{
+				symbol:    stock.Symbol,
+				stockData: latest,
+			}
 		}
 	}
 
@@ -134,15 +143,64 @@ func HandlerAddNewSymbol(p *Command) error {
 		fmt.Printf("Error inserting stock price for symbol: %s\n", symbol)
 		return err
 	}
+
+	for {
+		fmt.Println("Please enter the last Heikin Ashi Open and Close for stonk:", symbol)
+		p.Cfg.StdScanner.Scan()
+		text := p.Cfg.StdScanner.Text()
+		if len(text) == 0 {
+			continue
+		}
+		san := strings.Trim(text, " ")
+		arr := strings.Split(san, " ")
+
+		if len(arr) != 2 {
+			fmt.Println("Heikin Ashi Open and Close please:(")
+			continue
+		}
+
+		haOpen, err := strconv.ParseFloat(arr[0], 64)
+		if err != nil {
+			fmt.Println("Invalid Open value =(")
+			continue
+		}
+		haClose, err := strconv.ParseFloat(arr[1], 64)
+		if err != nil {
+			fmt.Println("Invalid Close value =(")
+			continue
+		}
+		err = p.Cfg.Query.CalibrateStockPrice(context.TODO(), &db.CalibrateStockPriceOpt{
+			Symbol:  symbol,
+			HAOpen:  haOpen,
+			HAClose: haClose,
+		})
+
+		if err != nil {
+			fmt.Println("Fail to update HA Open and Close")
+			continue
+		}
+		break
+	}
 	return nil
 }
 
 func HandleGetInfo(p *Command) error {
-	symbols, err := p.Cfg.Query.GetAllSymbols(context.TODO())
-	if err != nil {
-		return err
+	symbols := []models.Symbol{}
+	if len(p.Input) == 1 {
+		s, err := p.Cfg.Query.GetSymbol(context.TODO(), p.Input[0])
+		if err != nil {
+			return err
+		}
+		symbols = append(symbols, s)
+	} else {
+		s, err := p.Cfg.Query.GetAllSymbols(context.TODO())
+		if err != nil {
+			return err
+		}
+		symbols = append(symbols, s...)
 	}
-	limit := 80
+
+	limit := 2
 	endChan := make(chan bool)
 	for _, s := range symbols {
 		go getSymbolInfo(p, s, limit, endChan)
@@ -152,6 +210,26 @@ func HandleGetInfo(p *Command) error {
 		<-endChan
 	}
 	return nil
+}
+
+func HandleCalibrate(p *Command) error {
+	if len(p.Input) != 3 {
+		return errors.New("Please provide a stonk symbol, HAOpen, HAClose")
+	}
+	haOpen, err := strconv.ParseFloat(p.Input[1], 64)
+	if err != nil {
+		return errors.New("Fail to convert haOpen")
+	}
+	haClose, err := strconv.ParseFloat(p.Input[2], 64)
+	if err != nil {
+		return errors.New("Fail to convert haClose")
+	}
+	err = p.Cfg.Query.CalibrateStockPrice(context.TODO(), &db.CalibrateStockPriceOpt{
+		Symbol:  p.Input[0],
+		HAOpen:  haOpen,
+		HAClose: haClose,
+	})
+	return err
 }
 
 func getSymbolInfo(p *Command, s models.Symbol, limit int, endChan chan bool) {
@@ -172,44 +250,28 @@ func getSymbolInfo(p *Command, s models.Symbol, limit int, endChan chan bool) {
 		return
 	}
 
-	slices.Reverse(prices)
-
-	pr := models.Price{}
-
-	for i, p := range prices {
-		if i == 0 {
-			pr = p
-		}
-		price := calculation.PriceCal{
-			Open:  p.Open,
-			Close: p.Close,
-			High:  p.High,
-			Low:   p.Low,
-		}
-
-		prev := calculation.PriceCal{
-			Open:  pr.Open,  // HA
-			Close: pr.Close, // HA
-		}
-		po := calculation.GetHeikinDailyOpen(&prev)
-		pc := calculation.GetHeikinDailyClose(&price)
-
-		pr = models.Price{
-			Open:  po,
-			Close: pc,
-		}
-	}
+	pre := prices[1]
+	cur := prices[0]
 
 	price := calculation.PriceCal{
-		Open:  prices[limit-1].Open,
-		Close: prices[limit-1].Close,
-		High:  prices[limit-1].High,
-		Low:   prices[limit-1].Low,
+		Open:  cur.Open,
+		Close: cur.Close,
+		High:  cur.High,
+		Low:   cur.Low,
 	}
 
-	prev := calculation.PriceCal{
-		Open:  pr.Open,  // HA
-		Close: pr.Close, // HA
+	prev := calculation.PriceCal{}
+
+	if pre.HAOpen == 0 || pre.HAClose == 0 {
+		prev = calculation.PriceCal{
+			Open:  pre.Open,  // HA
+			Close: pre.Close, // HA
+		}
+	} else {
+		prev = calculation.PriceCal{
+			Open:  pre.HAOpen,  // HA
+			Close: pre.HAClose, // HA
+		}
 	}
 
 	o := calculation.GetHeikinDailyOpen(&prev)
@@ -225,7 +287,7 @@ func getSymbolInfo(p *Command, s models.Symbol, limit int, endChan chan bool) {
 	sen := getSentiment(u, bu, be, st, ds, g)
 
 	fmt.Printf("------------------------------------\nDate: %s\nSymbol: %s\nOHLC: %.2f, %.2f, %.2f, %.2f\nUptrend: %v\nBull: %v\nBear: %v\nSpinningTop: %v\nDoji: %v\nGrave: %v \nSentiment: %s\n",
-		prices[limit-1].Date.Time().Format("2006-01-02"), s.Symbol, o, h, l, c, u, bu, be, st, ds, g, sen)
+		prices[0].Date.Time().Format("2006-01-02"), s.Symbol, o, h, l, c, u, bu, be, st, ds, g, sen)
 	endChan <- true
 }
 
